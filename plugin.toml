@@ -1,0 +1,5 @@
+name = "rcp-gmail"
+description = "Rustic Plugin to deliver email through Gmail"
+lib_path = "librcp_gmail.so"
+version = "0.1.0"
+enabled = true

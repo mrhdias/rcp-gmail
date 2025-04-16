@@ -1,0 +1,6 @@
+# https://myaccount.google.com/apppasswords
+username = "__gmail.username__"
+password = "__pwd__from__apppasswords__"
+server = "smtp.gmail.com"
+# Maximum Attachment Size (KB or MB)
+max_size = 25MB
