@@ -78,6 +78,7 @@ impl<T> Pipe<T> for T {
 }
 
 static SMTP_CLIENT: Lazy<SmtpSettings> = Lazy::new(|| {
+
     let config_file = std::env::var("PLUGINS_DIR")
         .unwrap_or_else(|_| "plugins".to_string())
         .pipe(|dir| std::path::Path::new(&dir).join("rcp-gmail/config.toml"));
@@ -208,21 +209,30 @@ fn send_via_gmail(
 }
 
 
-#[unsafe(no_mangle)]
-pub extern "C" fn sendmail(headers: *const HeaderMap, body: *const u8, body_len: usize) -> *const c_char {
+pub unsafe extern "C" fn sendmail(headers: *const HeaderMap, body: *const u8, body_len: usize) -> *const c_char {
+
     let mut response = Response {
         status: "error".to_string(),
         message: "Internal plugin error".to_string(),
     };
 
-    if headers.is_null() || body.is_null() || body_len == 0 {
-        response.message = "Null pointer or empty body received".to_string();
+    if headers.is_null() {
+        response.message = "Null headers pointer".to_string();
+        return to_c_response(&response);
+    }
+
+    if body_len > 0 && body.is_null() {
+        response.message = "Null body pointer with non-zero length".to_string();
         return to_c_response(&response);
     }
 
     let headers = unsafe { &*headers };
     // Convert raw body pointer to a byte slice
-    let body_slice = unsafe { std::slice::from_raw_parts(body, body_len) };
+    let body_slice = if body_len > 0 {
+        unsafe { std::slice::from_raw_parts(body, body_len) }
+    } else {
+        &[]
+    };
 
     let content_type = headers
         .get("content-type")
@@ -317,16 +327,14 @@ pub extern "C" fn sendmail(headers: *const HeaderMap, body: *const u8, body_len:
     to_c_response(&response)
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn routes() -> *const c_char {
+pub unsafe extern "C" fn routes() -> *const c_char {
     CString::new(serde_json::to_string(ROUTES).unwrap_or_else(|_| "[]".to_string()))
         .unwrap()
         .into_raw()
 }
 
 // curl -X GET http://0.0.0.0:8080/plugin/rcp-gmail/about
-#[unsafe(no_mangle)]
-pub extern "C" fn about(_headers: *const HeaderMap, _body: *const u8, _body_len: usize) -> *const c_char {
+pub unsafe extern "C" fn about(_headers: *const HeaderMap, _body: *const u8, _body_len: usize) -> *const c_char {
     let info = format!(
         "Name: rcp-gmail\nVersion: {}\nauthors = \"Henrique Dias <mrhdias@gmail.com>\"\nDescription: Shared library for sending mail via Gmail\nLicense: MIT",
         VERSION
@@ -334,9 +342,11 @@ pub extern "C" fn about(_headers: *const HeaderMap, _body: *const u8, _body_len:
     CString::new(info).unwrap().into_raw()
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn free(ptr: *mut c_char) {
+pub unsafe extern "C" fn free(ptr: *mut c_char) {
     if !ptr.is_null() {
+        // Temporarily disable eprintln! to avoid crash
+        // eprintln!("free: ptr={:p}", ptr);
+        // std::fs::write("free_log.txt", format!("free: ptr={:p}\n", ptr)).unwrap();
         unsafe {
             drop(CString::from_raw(ptr));
         }
