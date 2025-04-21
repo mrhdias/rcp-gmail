@@ -28,13 +28,19 @@ struct PluginRoute {
 static ROUTES: &[PluginRoute] = &[
     PluginRoute {
         path: "/sendmail",
-        function: "sendmail",
+        function: "rcp_sendmail",
         method_router: "post",
         response_type: "json",
     },
     PluginRoute {
         path: "/about",
-        function: "about",
+        function: "rcp_about",
+        method_router: "get",
+        response_type: "text",
+    },
+    PluginRoute {
+        path: "/exports",
+        function: "rcp_exports",
         method_router: "get",
         response_type: "text",
     },
@@ -208,8 +214,8 @@ fn send_via_gmail(
         .map_err(|e| format!("Failed to send email: {}", e))
 }
 
-
-pub unsafe extern "C" fn sendmail(headers: *const HeaderMap, body: *const u8, body_len: usize) -> *const c_char {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rcp_sendmail(headers: *const HeaderMap, body: *const u8, body_len: usize) -> *const c_char {
 
     let mut response = Response {
         status: "error".to_string(),
@@ -327,26 +333,56 @@ pub unsafe extern "C" fn sendmail(headers: *const HeaderMap, body: *const u8, bo
     to_c_response(&response)
 }
 
-pub unsafe extern "C" fn routes() -> *const c_char {
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rcp_routes() -> *const c_char {
     CString::new(serde_json::to_string(ROUTES).unwrap_or_else(|_| "[]".to_string()))
         .unwrap()
         .into_raw()
 }
 
 // curl -X GET http://0.0.0.0:8080/plugin/rcp-gmail/about
-pub unsafe extern "C" fn about(_headers: *const HeaderMap, _body: *const u8, _body_len: usize) -> *const c_char {
-    let info = format!(
-        "Name: rcp-gmail\nVersion: {}\nauthors = \"Henrique Dias <mrhdias@gmail.com>\"\nDescription: Shared library for sending mail via Gmail\nLicense: MIT",
-        VERSION
-    );
-    CString::new(info).unwrap().into_raw()
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rcp_about(
+    _headers: *const HeaderMap,
+    _body: *const u8,
+    _body_len: usize,
+) -> *const c_char {
+
+    let version_string = format!("Version: {}", VERSION);
+    let info = vec![
+        "Name: rcp-gmail",
+        version_string.as_str(),
+        "Authors: Henrique Dias <mrhdias@gmail.com>",
+        "Description: Shared library for sending mail via Gmail",
+        "License: MIT",
+    ];
+
+    let info_text = info.join("\n");
+    CString::new(info_text).unwrap().into_raw()
 }
 
-pub unsafe extern "C" fn free(ptr: *mut c_char) {
+// curl -X GET http://0.0.0.0:8080/plugin/rcp-gmail/exports
+// return the available list of function in library
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rcp_exports(
+    _headers: *const HeaderMap,
+    _body: *const u8,
+    _body_len: usize,
+) -> *const c_char {
+    let public_functions = vec![
+        "rcp_sendmail",
+        "rcp_routes",
+        "rcp_about",
+        "rcp_exports",
+        "rcp_free",
+    ];
+    let functions_text = public_functions.join("\n");
+    CString::new(functions_text).unwrap().into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rcp_free(ptr: *mut c_char) {
     if !ptr.is_null() {
-        // Temporarily disable eprintln! to avoid crash
-        // eprintln!("free: ptr={:p}", ptr);
-        // std::fs::write("free_log.txt", format!("free: ptr={:p}\n", ptr)).unwrap();
         unsafe {
             drop(CString::from_raw(ptr));
         }
